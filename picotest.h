@@ -243,7 +243,47 @@ namespace detail {
 #endif
     }
 
+    template<typename Char, typename CharTraits, typename Duration>
+    void report_duration(std::basic_ostream<Char, CharTraits>& os, const Duration& duration) {
+        const auto total_full_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
+        const auto total_full_seconds = total_full_milliseconds / 1000;
+        const auto total_full_minutes = total_full_seconds / 60;
+        const auto total_full_hours = total_full_minutes / 60;
+        const auto total_full_days = total_full_hours / 24;
+
+        const auto milliseconds_remainder = total_full_milliseconds - total_full_seconds * 1000;
+        const auto seconds_remainder = total_full_seconds - total_full_minutes * 60;
+        const auto minutes_remainder = total_full_minutes - total_full_hours * 60;
+        const auto hours_remainder = total_full_hours - total_full_days * 24;
+
+        os << "Duration: ";
+
+        bool printing_started = false;
+        const auto print_element = [&](auto number, const std::string& unit) {
+            if (printing_started || number > 0) {
+                if (printing_started) {
+                    os << ", ";
+                }
+                else {
+                    printing_started = true;
+                }
+                os << number << " " << unit;
+                if (number != 1) {
+                    os << "s";
+                }
+            }
+        };
+
+        print_element(total_full_days, "day");
+        print_element(hours_remainder, "hour");
+        print_element(minutes_remainder, "minute");
+        print_element(seconds_remainder, "second");
+
+        if (total_full_minutes == 0) {
+            print_element(milliseconds_remainder, "millisecond");
+        }
+    }
 }
 
 /////////////////////////////////////////////////////////////////
@@ -370,17 +410,25 @@ public:
     void execute(std::basic_ostream<Char, CharTraits>& os) {
         TestState::setCurrentTestCase(this);
      
+        const auto start_time = std::chrono::steady_clock::now();
+
         std::for_each(tests_.begin(), tests_.end(), std::mem_fun_ref(&Test::execute));
+
+        const auto end_time = std::chrono::steady_clock::now();
 
         executed_ = true;
 
-        if (TestState::getReportMode() == TestReportForEach)
+        if (TestState::getReportMode() == TestReportForEach) {
             report(os);
+            os << " (";
+            detail::report_duration(os, end_time - start_time);
+            os << ")" << std::endl;
+        }
     }
 
     template<typename Char, typename CharTraits>
     void report(std::basic_ostream<Char, CharTraits>& os) const {
-        os << name_ << ":";
+        os << name_ << ": ";
 
         if (success())
             coloredPrint(detail::COLOR_GREEN, "[ PASSED ] ");
@@ -389,8 +437,6 @@ public:
 
         for (Tests::const_iterator it = tests_.begin(), end = tests_.end(); it != end; ++it)
             if (!(*it).success()) (*it).reportFailure(os);
-
-        os << std::endl;
     }
 
     bool success() const {
@@ -468,53 +514,6 @@ public:
 
     std::size_t numTotal() const {
         return tests_.size();
-    }
-
-    template<typename Char, typename CharTraits, typename Duration>
-    void report_duration(std::basic_ostream<Char, CharTraits>& os, const Duration& duration) const {
-        const auto total_full_milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-
-        const auto total_full_seconds = total_full_milliseconds / 1000;
-        const auto total_full_minutes = total_full_seconds / 60;
-        const auto total_full_hours = total_full_minutes / 60;
-        const auto total_full_days = total_full_hours / 24;
-
-        const auto milliseconds_remainder = total_full_milliseconds - total_full_seconds * 1000;
-        const auto seconds_remainder = total_full_seconds - total_full_minutes * 60;
-        const auto minutes_remainder = total_full_minutes - total_full_hours * 60;
-        const auto hours_remainder = total_full_hours - total_full_days * 24;
-
-        os << "Duration: ";
-
-        bool comma_required = false;
-        const auto print_comma_if_required = [&]() {
-            if (comma_required) {
-                os << ", ";
-            }
-            else {
-                comma_required = true;
-            }
-        };
-        if (total_full_days > 0) {
-            print_comma_if_required();
-            os << total_full_days << " days";
-        }
-        if (hours_remainder > 0) {
-            print_comma_if_required();
-            os << hours_remainder << " hours";
-        }
-        if (minutes_remainder > 0) {
-            print_comma_if_required();
-            os << minutes_remainder << " minutes";
-        }
-        if (seconds_remainder > 0) {
-            print_comma_if_required();
-            os << seconds_remainder << " seconds";
-        }
-        if (milliseconds_remainder > 0 && total_full_hours == 0) {
-            print_comma_if_required();
-            os << milliseconds_remainder << " milliseconds";
-        }
     }
 
 private:
@@ -804,7 +803,7 @@ inline int RUN_ALL_TESTS() {
     picotest::framework::Registry::getInstance().testRun(std::cout);
     const auto end_time = std::chrono::steady_clock::now();
     picotest::framework::Registry::getInstance().report(std::cout);
-    picotest::framework::Registry::getInstance().report_duration(std::cout, end_time - start_time);
+    picotest::detail::report_duration(std::cout, end_time - start_time);
     return picotest::framework::Registry::getInstance().fail() ? 1 : 0;
 }
 
