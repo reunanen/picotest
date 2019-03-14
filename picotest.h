@@ -260,8 +260,8 @@ namespace detail {
         os << "Duration: ";
 
         bool printing_started = false;
-        const auto print_element = [&](auto number, const std::string& unit) {
-            if (printing_started || number > 0) {
+        const auto print_element = [&](auto number, const std::string& unit, bool print_even_if_zero) {
+            if (printing_started || number > 0 || print_even_if_zero) {
                 if (printing_started) {
                     os << ", ";
                 }
@@ -275,13 +275,13 @@ namespace detail {
             }
         };
 
-        print_element(total_full_days, "day");
-        print_element(hours_remainder, "hour");
-        print_element(minutes_remainder, "minute");
-        print_element(seconds_remainder, "second");
+        print_element(total_full_days, "day", false);
+        print_element(hours_remainder, "hour", false);
+        print_element(minutes_remainder, "minute", false);
+        print_element(seconds_remainder, "second", false);
 
         if (total_full_minutes == 0) {
-            print_element(milliseconds_remainder, "millisecond");
+            print_element(milliseconds_remainder, "millisecond", true);
         }
     }
 }
@@ -410,33 +410,38 @@ public:
     void execute(std::basic_ostream<Char, CharTraits>& os) {
         TestState::setCurrentTestCase(this);
      
-        const auto start_time = std::chrono::steady_clock::now();
+        start_time_ = std::chrono::steady_clock::now();
 
         std::for_each(tests_.begin(), tests_.end(), std::mem_fun_ref(&Test::execute));
 
-        const auto end_time = std::chrono::steady_clock::now();
+        end_time_ = std::chrono::steady_clock::now();
 
         executed_ = true;
 
         if (TestState::getReportMode() == TestReportForEach) {
-            report(os);
-            os << " (";
-            detail::report_duration(os, end_time - start_time);
-            os << ")" << std::endl;
+            report(os, 0);
         }
     }
 
     template<typename Char, typename CharTraits>
-    void report(std::basic_ostream<Char, CharTraits>& os) const {
-        os << name_ << ": ";
+    void report(std::basic_ostream<Char, CharTraits>& os, size_t align) const {
+        os << std::left << std::setw(align > 0 ? align + 2 : 0) << (name_ + ": ");
 
         if (success())
-            coloredPrint(detail::COLOR_GREEN, "[ PASSED ] ");
+            coloredPrint(detail::COLOR_GREEN, "[ PASSED ]");
         else
-            coloredPrint(detail::COLOR_RED, "[ FAILED ] ");
+            coloredPrint(detail::COLOR_RED, "[ FAILED ]");
+
+        if (executed_) {
+            os << "  (";
+            detail::report_duration(os, end_time_ - start_time_);
+            os << ")  ";
+        }
 
         for (Tests::const_iterator it = tests_.begin(), end = tests_.end(); it != end; ++it)
             if (!(*it).success()) (*it).reportFailure(os);
+
+        os << std::endl;
     }
 
     bool success() const {
@@ -459,6 +464,8 @@ private:
     bool executed_;
     std::string name_;
     Tests tests_;
+    std::chrono::steady_clock::time_point start_time_;
+    std::chrono::steady_clock::time_point end_time_;
 };
 
 struct Registry {
@@ -488,15 +495,24 @@ public:
 
     template<typename Char, typename CharTraits>
     void report(std::basic_ostream<Char, CharTraits>& os) const {
+        os << std::endl;
+
         std::size_t failed = numFailed();
 
         if (failed) {
             os << numFailed() << " of " << numTotal() << " tests failed." << std::endl;
-
-            for (TestCases::const_iterator it = tests_.begin(), end = tests_.end(); it != end; ++it)
-                if (!(*it).success()) (*it).report(os);
         } else {
             os << numSuccess() << " tests success." << std::endl;
+        }
+
+        const auto compare = [](const TestCase& lhs, const TestCase& rhs) {
+            return lhs.name().length() < rhs.name().length();
+        };
+        const auto longest_name = std::max_element(tests_.begin(), tests_.end(), compare);
+        const auto max_name_length = longest_name != tests_.end() ? longest_name->name().length() : 0;
+
+        for (TestCases::const_iterator it = tests_.begin(), end = tests_.end(); it != end; ++it) {
+            (*it).report(os, max_name_length);
         }
     }
 
