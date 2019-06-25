@@ -260,8 +260,8 @@ namespace detail {
         os << "Duration: ";
 
         bool printing_started = false;
-        const auto print_element = [&](auto number, const std::string& unit) {
-            if (printing_started || number > 0) {
+        const auto print_element = [&](auto number, const std::string& unit, bool force_printing_to_start = false) {
+            if (printing_started || number > 0 || force_printing_to_start) {
                 if (printing_started) {
                     os << ", ";
                 }
@@ -281,7 +281,7 @@ namespace detail {
         print_element(seconds_remainder, "second");
 
         if (total_full_minutes == 0) {
-            print_element(milliseconds_remainder, "millisecond");
+            print_element(milliseconds_remainder, "millisecond", true);
         }
     }
 }
